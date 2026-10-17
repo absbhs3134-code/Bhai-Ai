@@ -4,191 +4,338 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.hardware.camera2.CameraManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognizerIntent
+import android.speech.RecognitionListener
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
-import android.widget.Toast
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
+import android.graphics.Color
+import android.graphics.Typeface
+import android.view.Gravity
+import android.widget.*
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 
-class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
+class MainActivity : Activity() {
+
+    private var recognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
-    private var torchOn = false
-    private var cameraId: String? = null
-    private var readyToSpeak = false
+    private var ready = false
+    private var speaking = false
+    private var listening = false
 
-    private val permissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { result ->
-        if (result[Manifest.permission.RECORD_AUDIO] == true) {
-            Toast.makeText(this, "Mic permission mil gayi. Ab Speak dabao.", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(this, "Voice ke liye microphone permission zaroori hai.", Toast.LENGTH_LONG).show()
-        }
-    }
+    private lateinit var status: TextView
+    private lateinit var mic: Button
+    private val handler = Handler(Looper.getMainLooper())
+
+    private val blue = Color.rgb(0, 190, 255)
+    private val white = Color.WHITE
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        tts = TextToSpeech(this, this)
-        try {
-            val cm = getSystemService(CAMERA_SERVICE) as CameraManager
-            cameraId = cm.cameraIdList.firstOrNull { id ->
-                cm.getCameraCharacteristics(id).get(
-                    android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE
-                ) == true
+
+        window.statusBarColor = Color.rgb(3, 12, 32)
+        window.navigationBarColor = Color.rgb(3, 12, 32)
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(24, 30, 24, 24)
+            setBackgroundColor(Color.rgb(3, 12, 32))
+        }
+
+        val title = TextView(this).apply {
+            text = "✦  Bhai AI  👑"
+            textSize = 32f
+            setTextColor(blue)
+            gravity = Gravity.CENTER
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        root.addView(title)
+
+        val subtitle = TextView(this).apply {
+            text = "Aapka Digital Dost"
+            textSize = 16f
+            setTextColor(white)
+            gravity = Gravity.CENTER
+        }
+        root.addView(subtitle)
+
+        val greeting = TextView(this).apply {
+            text = "\nAssalam-o-Alaikum! 👋\nMain Bhai AI hoon.\n"
+            textSize = 23f
+            setTextColor(white)
+            gravity = Gravity.CENTER
+        }
+        root.addView(greeting)
+
+        status = TextView(this).apply {
+            text = "Aapki awaaz ka intezar hai..."
+            textSize = 17f
+            setTextColor(blue)
+            gravity = Gravity.CENTER
+            setPadding(8, 24, 8, 24)
+        }
+        root.addView(status)
+
+        mic = Button(this).apply {
+            text = "🎙  START LISTENING"
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.rgb(20, 80, 190))
+        }
+        root.addView(
+            mic,
+            LinearLayout.LayoutParams(
+                -1, 64
+            ).apply {
+                setMargins(0, 16, 0, 20)
             }
-        } catch (_: Exception) { }
+        )
 
-        setContent {
-            MaterialTheme {
-                var transcript by remember { mutableStateOf("") }
-                var reply by remember { mutableStateOf("Assalam-o-alaikum bhai! Main Bhai AI hoon. Speak dabao ya neeche command likho.") }
-                var command by remember { mutableStateOf("") }
+        val apps = TextView(this).apply {
+            text = "YOUR QUICK COMMANDS"
+            textSize = 17f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(blue)
+            gravity = Gravity.CENTER
+            setPadding(0, 16, 0, 16)
+        }
+        root.addView(apps)
 
-                Surface(Modifier.fillMaxSize()) {
-                    Column(
-                        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text("Bhai AI", style = MaterialTheme.typography.headlineLarge)
-                        Text("Tecno Spark 10 Pro • Voice + basic mobile control")
-                        Card(Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(16.dp)) {
-                                Text("Tumne kaha:", style = MaterialTheme.typography.titleSmall)
-                                Text(transcript.ifBlank { "Abhi koi command nahi." })
-                                Spacer(Modifier.height(12.dp))
-                                Text("Bhai ka jawab:", style = MaterialTheme.typography.titleSmall)
-                                Text(reply)
+        listOf(
+            "🕒  Waqt kya hua hai?",
+            "📅  Aaj ki tareekh",
+            "👋  Salam karo",
+            "😄  Koi mazaq sunao",
+            "💬  Madad chahiye"
+        ).forEach { text ->
+            val item = TextView(this).apply {
+                this.text = text
+                textSize = 17f
+                setTextColor(white)
+                setPadding(18, 15, 18, 15)
+                setBackgroundColor(Color.rgb(13, 31, 62))
+            }
+            val params = LinearLayout.LayoutParams(-1, -2)
+            params.setMargins(0, 5, 0, 5)
+            root.addView(item, params)
+        }
+
+        val scroll = ScrollView(this)
+        scroll.addView(root)
+        setContentView(scroll)
+
+        tts = TextToSpeech(this) { result ->
+            if (result == TextToSpeech.SUCCESS) {
+                val language = tts?.setLanguage(Locale("ur", "PK"))
+                ready = language !=
+                    TextToSpeech.LANG_MISSING_DATA &&
+                    language != TextToSpeech.LANG_NOT_SUPPORTED
+
+                tts?.setOnUtteranceProgressListener(
+                    object : android.speech.tts.UtteranceProgressListener() {
+                        override fun onStart(id: String?) {
+                            speaking = true
+                        }
+
+                        override fun onDone(id: String?) {
+                            speaking = false
+                            handler.post {
+                                if (mic.isEnabled) startListening()
                             }
                         }
-                        Button(
-                            onClick = {
-                                val granted = ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-                                if (!granted) {
-                                    permissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA))
-                                } else {
-                                    startListening { spoken ->
-                                        transcript = spoken
-                                        reply = handleCommand(spoken)
-                                    }
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text("🎙 Speak / Bolo") }
 
-                        OutlinedTextField(
-                            value = command,
-                            onValueChange = { command = it },
-                            label = { Text("Command yahan likho") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Button(onClick = {
-                            transcript = command
-                            reply = handleCommand(command)
-                            command = ""
-                        }, modifier = Modifier.fillMaxWidth()) { Text("Command chalao") }
-
-                        Text("Try these commands", style = MaterialTheme.typography.titleMedium)
-                        Text("• torch on\n• torch off\n• settings kholo\n• YouTube kholo\n• time kya hai\n• help")
-                        Text("Note: Yeh starter version hai. General AI answers ke liye secure online AI backend add karna hoga.")
+                        override fun onError(id: String?) {
+                            speaking = false
+                            handler.post { startListening() }
+                        }
                     }
-                }
+                )
             }
+        }
+
+        mic.setOnClickListener {
+            if (listening) {
+                stopListening()
+                mic.text = "🎙  RESUME LISTENING"
+                status.text = "Listening pause hai."
+            } else {
+                ensurePermissionAndListen()
+            }
+        }
+
+        ensurePermissionAndListen()
+    }
+
+    private fun ensurePermissionAndListen() {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(
+                arrayOf(Manifest.permission.RECORD_AUDIO), 21
+            )
+        } else {
+            startListening()
         }
     }
 
-    private fun startListening(onResult: (String) -> Unit) {
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(
+            requestCode, permissions, grantResults
+        )
+        if (requestCode == 21 &&
+            grantResults.isNotEmpty() &&
+            grantResults[0] == PackageManager.PERMISSION_GRANTED
+        ) {
+            startListening()
+        } else {
+            status.text = "Microphone permission dena zaroori hai."
+        }
+    }
+
+    private fun startListening() {
+        if (isFinishing || speaking || listening) return
+
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            Toast.makeText(this, "Is phone par speech recognition service available nahi.", Toast.LENGTH_LONG).show()
+            status.text = "Speech recognition service available nahi hai."
             return
         }
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ur-PK")
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "Bhai, bolo kya karna hai")
-        }
+
         try {
-            @Suppress("DEPRECATION")
-            startActivityForResult(intent, 42)
-        } catch (_: Exception) {
-            Toast.makeText(this, "Voice input start nahi ho saka.", Toast.LENGTH_LONG).show()
+            recognizer?.destroy()
+            recognizer = SpeechRecognizer.createSpeechRecognizer(this)
+
+            recognizer?.setRecognitionListener(
+                object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) {
+                        listening = true
+                        runOnUiThread {
+                            status.text = "🔵 Listening... Ab boliye"
+                            mic.text = "🎙  LISTENING"
+                        }
+                    }
+
+                    override fun onResults(results: Bundle?) {
+                        listening = false
+                        val words = results?.getStringArrayListExtra(
+                            SpeechRecognizer.RESULTS_RECOGNITION
+                        )
+                        val command = words?.firstOrNull().orEmpty()
+                        respond(command)
+                    }
+
+                    override fun onError(error: Int) {
+                        listening = false
+                        if (!speaking) {
+                            handler.postDelayed({
+                                startListening()
+                            }, 900)
+                        }
+                    }
+
+                    override fun onBeginningOfSpeech() {}
+                    override fun onRmsChanged(rmsdB: Float) {}
+                    override fun onBufferReceived(buffer: ByteArray?) {}
+                    override fun onEndOfSpeech() {
+                        listening = false
+                    }
+                    override fun onPartialResults(partial: Bundle?) {}
+                    override fun onEvent(type: Int, params: Bundle?) {}
+                }
+            )
+
+            val intent = Intent(
+                RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+            ).apply {
+                putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                )
+                putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE,
+                    "ur-PK"
+                )
+                putExtra(
+                    RecognizerIntent.EXTRA_PARTIAL_RESULTS,
+                    false
+                )
+            }
+
+            recognizer?.startListening(intent)
+        } catch (e: Exception) {
+            listening = false
+            status.text = "Mic start nahi hua. Dobara try karein."
         }
-        pendingResult = onResult
     }
 
-    private var pendingResult: ((String) -> Unit)? = null
-
-    @Deprecated("Deprecated in Android API but used here for broad starter compatibility")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == 42 && resultCode == Activity.RESULT_OK) {
-            val spoken = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull().orEmpty()
-            pendingResult?.invoke(spoken)
-        }
+    private fun stopListening() {
+        listening = false
+        recognizer?.cancel()
+        recognizer?.destroy()
+        recognizer = null
     }
 
-    private fun handleCommand(raw: String): String {
-        val text = raw.lowercase(Locale.ROOT).trim()
-        val response = when {
-            text.contains("torch on") || text.contains("torch chala") || text.contains("flash on") || text.contains("torch kholo") -> {
-                setTorch(true); if (torchOn) "Theek hai bhai, torch on kar di." else "Torch on nahi ho saki. Camera permission ya flash check karo."
-            }
-            text.contains("torch off") || text.contains("torch band") || text.contains("flash off") -> {
-                setTorch(false); "Theek hai bhai, torch off kar di."
-            }
-            text.contains("settings") || text.contains("setting kholo") -> {
-                runCatching { startActivity(Intent(android.provider.Settings.ACTION_SETTINGS)) }
-                "Bhai, Settings khol raha hoon."
-            }
-            text.contains("youtube") -> {
-                val launch = packageManager.getLaunchIntentForPackage("com.google.android.youtube")
-                if (launch != null) startActivity(launch)
-                else startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com")))
-                "Bhai, YouTube khol raha hoon."
-            }
-            text.contains("time") || text.contains("waqt") || text.contains("kitne baje") -> {
-                "Bhai, abhi " + SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date()) + " hain."
-            }
-            text.contains("help") || text.contains("madad") -> "Bhai, abhi torch on/off, Settings, YouTube aur time commands chala sakta hoon."
-            text.isBlank() -> "Bhai, command sunai nahi di. Dobara try karo."
-            else -> "Bhai, command samajh nahi aayi. Filhaal torch on/off, Settings kholo, YouTube kholo ya time kya hai bolo. General AI chat abhi connect nahi hai."
-        }
-        if (readyToSpeak) tts?.speak(response, TextToSpeech.QUEUE_FLUSH, null, "bhai_reply")
-        return response
-    }
+    private fun respond(command: String) {
+        val c = command.lowercase(Locale.ROOT)
 
-    private fun setTorch(enabled: Boolean) {
-        try {
-            val id = cameraId ?: return
-            val cm = getSystemService(CAMERA_SERVICE) as CameraManager
-            cm.setTorchMode(id, enabled)
-            torchOn = enabled
-        } catch (_: Exception) {
-            torchOn = false
-        }
-    }
+        val reply = when {
+            "salam" in c || "assalam" in c ->
+                "Wa alaikum assalam bhai! Kya haal hai?"
 
-    override fun onInit(status: Int) {
-        readyToSpeak = status == TextToSpeech.SUCCESS
-        if (readyToSpeak) {
-            tts?.language = Locale("ur", "PK")
+            "kaise ho" in c || "kaisay ho" in c ->
+                "Main theek hoon bhai! Aap sunao."
+
+            "waqt" in c || "time" in c ||
+                "baje" in c ->
+                "Abhi waqt hai " +
+                    SimpleDateFormat(
+                        "hh:mm a", Locale.getDefault()
+                    ).format(Date())
+
+            "tareekh" in c || "tarikh" in c ||
+                "date" in c ->
+                "Aaj ki tareekh " +
+                    SimpleDateFormat(
+                        "dd MMMM yyyy",
+                        Locale.getDefault()
+                    ).format(Date())
+
+            "mazaq" in c || "joke" in c ->
+                "Bhai, computer thak kyun gaya? Bohat saare tabs khol rakhe thay!"
+
+            "madad" in c || "help" in c ->
+                "Bhai, waqt, tareekh, salam aur mazaq ke liye mujhse pooch sakte ho."
+
+            else ->
+                "Bhai, yeh baat mujhe abhi nahi aati."
+        }
+
+        runOnUiThread {
+            status.text = "Aap: $command\n\nBhai AI: $reply"
+            if (ready) {
+                tts?.speak(
+                    reply,
+                    TextToSpeech.QUEUE_FLUSH,
+                    null,
+                    "bhai_reply"
+                )
+            } else {
+                handler.postDelayed({ startListening() }, 1000)
+            }
         }
     }
 
     override fun onDestroy() {
+        handler.removeCallbacksAndMessages(null)
+        recognizer?.destroy()
         tts?.stop()
         tts?.shutdown()
         super.onDestroy()
