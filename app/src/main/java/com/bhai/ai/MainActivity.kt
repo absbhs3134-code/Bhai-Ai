@@ -83,8 +83,53 @@ class MainActivity : Activity() {
         }
 
         setContentView(layout)
+    
+        // Start Bhai AI voice service after microphone permission is granted
+        if (android.os.Build.VERSION.SDK_INT >= 23) {
+            if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                startBhaiVoiceService()
+            } else {
+                requestPermissions(
+                    arrayOf(android.Manifest.permission.RECORD_AUDIO),
+                    200
+                )
+            }
+        } else {
+            startBhaiVoiceService()
+        }
     }
 
+   
+    private fun startBhaiVoiceService() {
+        val serviceIntent = Intent(this, VoiceService::class.java)
+
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(
+            requestCode, permissions, grantResults
+        )
+
+        if (requestCode == 200 &&
+            grantResults.isNotEmpty() &&
+            grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            startBhaiVoiceService()
+        } else if (requestCode == 200) {
+            status.text = "Bhai AI ko microphone permission chahiye."
+        }
+    }
     private fun getReply(command: String): String {
         val c = command.lowercase(Locale.ROOT)
 
